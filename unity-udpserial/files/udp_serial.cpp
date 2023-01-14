@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <array>
+#include <memory>
 
 
 extern "C" {
@@ -16,10 +17,56 @@ extern "C" {
 	#include <arpa/inet.h>
 	#include <netinet/in.h>
 	#include <sys/types.h>
+	#include <openssl/ssl.h>
+	#include <openssl/err.h>
 
 }
 
+struct TLS {
 
+	TLS(std::string& certificate, std::string& privatekey) : 
+			m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
+			m_ssl(SSL_new(m_ctx.get()), SSL_free) {
+
+			m_certificate = certificate;
+			m_privatekey = privatekey;
+
+			/* Set the key and cert */
+    		if(SSL_CTX_use_certificate_file(m_ctx.get(), certificate.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        		ERR_print_errors_fp(stderr);
+        		exit(EXIT_FAILURE);
+    		}
+
+    		if(SSL_CTX_use_PrivateKey_file(m_ctx.get(), privatekey.c_str(), SSL_FILETYPE_PEM) <= 0 ) {
+        		ERR_print_errors_fp(stderr);
+        		exit(EXIT_FAILURE);
+    		}
+
+	}
+
+	~TLS() {}
+
+	std::int32_t read() {
+
+	}
+
+	std::int32_t write() {
+
+	}
+
+	TLS& attachUdpSocket(std::int32_t fd) {
+		SSL_set_fd(m_ssl.get(), fd);
+		return(*this);
+	}
+
+	private:
+
+		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
+		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
+		std::string m_certificate;
+		std::string m_privatekey;
+
+};
 
 class UdpSerial {
 	public:
@@ -76,8 +123,8 @@ class UdpSerial {
 			auto parityOn = 0;
 			auto parity = 0;
 
-    			newtio.c_cflag =  CRTSCTS | dataBits | stopBits | parityOn | parity   | CLOCAL | CREAD;
-    			newtio.c_iflag = 0;
+    		newtio.c_cflag =  CRTSCTS | dataBits | stopBits | parityOn | parity   | CLOCAL | CREAD;
+    		newtio.c_iflag = 0;
 			newtio.c_oflag = 0;
 			newtio.c_lflag = 0;
 			newtio.c_cc[VMIN] = 1;
@@ -164,7 +211,7 @@ class UdpSerial {
  				to.tv_sec = 5;
  				to.tv_usec = 0;
 
-		        	FD_ZERO(&fdList);
+		        FD_ZERO(&fdList);
  				FD_SET(m_udpFd, &fdList);
  				FD_SET(m_serialFd, &fdList);
 
