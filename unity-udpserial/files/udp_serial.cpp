@@ -22,51 +22,6 @@ extern "C" {
 
 }
 
-struct TLS {
-
-	TLS(std::string& certificate, std::string& privatekey) : 
-			m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
-			m_ssl(SSL_new(m_ctx.get()), SSL_free) {
-
-			m_certificate = certificate;
-			m_privatekey = privatekey;
-
-			/* Set the key and cert */
-    		if(SSL_CTX_use_certificate_file(m_ctx.get(), certificate.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        		ERR_print_errors_fp(stderr);
-        		exit(EXIT_FAILURE);
-    		}
-
-    		if(SSL_CTX_use_PrivateKey_file(m_ctx.get(), privatekey.c_str(), SSL_FILETYPE_PEM) <= 0 ) {
-        		ERR_print_errors_fp(stderr);
-        		exit(EXIT_FAILURE);
-    		}
-
-	}
-
-	~TLS() {}
-
-	std::int32_t read() {
-
-	}
-
-	std::int32_t write() {
-
-	}
-
-	TLS& attachUdpSocket(std::int32_t fd) {
-		SSL_set_fd(m_ssl.get(), fd);
-		return(*this);
-	}
-
-	private:
-
-		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
-		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
-		std::string m_certificate;
-		std::string m_privatekey;
-
-};
 
 class UdpSerial {
 	public:
@@ -198,6 +153,10 @@ class UdpSerial {
 			return(0);
 		}
 
+		int udp_channel() const {
+			return(m_udpFd);
+		}
+
 		int start() {
 
 			int conn_id   = -1;
@@ -241,8 +200,6 @@ class UdpSerial {
   			} /* End of while loop */
 		}
 
-
-
 	private:
 		std::string m_ip;
 		std::uint16_t m_port;
@@ -251,12 +208,92 @@ class UdpSerial {
 		std::int32_t m_serialFd;
 		struct sockaddr_in m_toAddr;
 		struct termios m_oldConfig;
+
 };
 
+struct TLS : public UdpSerial {
+
+	TLS(std::string& certificate, std::string& privatekey, const std::string& ip, std::uint16_t port, const std::string& devPort = "/dev/mhitty1") : 
+			UdpSerial(ip, port, devPort),
+			m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
+			m_ssl(SSL_new(m_ctx.get()), SSL_free) {
+
+			m_certificate = certificate;
+			m_privatekey = privatekey;
+
+			/* Set the key and cert */
+    		if(SSL_CTX_use_certificate_file(m_ctx.get(), certificate.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        		ERR_print_errors_fp(stderr);
+        		exit(EXIT_FAILURE);
+    		}
+
+    		if(SSL_CTX_use_PrivateKey_file(m_ctx.get(), privatekey.c_str(), SSL_FILETYPE_PEM) <= 0 ) {
+        		ERR_print_errors_fp(stderr);
+        		exit(EXIT_FAILURE);
+    		}
+
+			//attaching plain UDP Fd to SSL Fd
+			attachUdpSocket(udp_channel());
+	}
+
+	~TLS() {
+		SSL_shutdown(m_ssl.get());
+	}
+
+	std::int32_t read(std::string& out) {
+
+		std::array<std::uint8_t, 2048> req;
+		req.fill(0);
+
+		auto ret = SSL_read(m_ssl.get(), (void *)req.data(), req.size());
+		if(ret <= 0) {
+			// SSL_read failed
+			ERR_print_errors_fp(stderr);
+			return(-1);
+		}
+
+		out = std::string((const char *)req.data(), ret);
+		return(0);
+	}
+
+	std::int32_t write(const std::string& in) {
+
+		auto ret = SSL_write(m_ssl.get(), (const void *)in.c_str(), in.length());
+		if(ret <= 0) {
+			//SSL_write is failed
+			ERR_print_errors_fp(stderr);
+			return(-1);
+		}
+
+		return(0);
+	}
+
+	TLS& attachUdpSocket(std::int32_t fd) {
+		// This willcause TLS handshake when we do SSL_write if handshake is not already done.
+		SSL_set_accept_state(m_ssl.get());
+		SSL_set_fd(m_ssl.get(), fd);
+		return(*this);
+	}
+
+	int txToUdp(std::string& req) {
+		write(req);
+	}
+
+	int rxFromUdp(std::string& rsp) {
+		read(rsp);
+	}
+
+	private:
+		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
+		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
+		std::string m_certificate;
+		std::string m_privatekey;
+
+};
 
 int main(int argc, char *argv[]) {
-	if(argc < 3) {
-		std::cout << "arg1=ip address arg2=port number arg3=serial path" << std::endl;
+	if(argc < 6) {
+		std::cout << "arg1=ip address arg2=port number arg3=serial path arg4=certificate arg5=private_key_file_name" << std::endl;
 		return(-1);
 	}
 
@@ -264,15 +301,25 @@ int main(int argc, char *argv[]) {
 	std::uint16_t port = std::stoi(std::string(argv[2], strlen(argv[2])));
 	std::string path("");
 
+	path = std::string("/dev/mhitty1");
 	if(NULL != argv[3]) {
 		path = std::string(argv[3], strlen(argv[3]));
-	} else {
-		path = std::string("/dev/mhitty1");
 	}
 
-	UdpSerial udpSerial(ip, port, path);
+	std::string certificate("");
+	std::string private_key("");
 
-	udpSerial.start();
+	if(NULL != argv[4]) {
+		certificate = std::string(argv[4], strlen(argv[4]));
+	}
+
+	if(NULL != argv[5]) {
+		private_key = std::string(argv[5], strlen(argv[5]));
+	}
+
+	TLS dtls_server(certificate, private_key, ip, port, path);
+
+	dtls_server.start();
 }
 
 
