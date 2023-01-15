@@ -120,7 +120,6 @@ class UdpSerial {
 
 		}
 
-
 		int rxFromUdp(std::string& rsp) {
 			std::int32_t ret = -1;
 			std::array<char, 1024> in;
@@ -211,9 +210,9 @@ class UdpSerial {
 
 };
 
-struct TLS : public UdpSerial {
+struct TLSServer : public UdpSerial {
 
-	TLS(std::string& certificate, std::string& privatekey, const std::string& ip, std::uint16_t port, const std::string& devPort = "/dev/mhitty1") : 
+	TLSServer(std::string& certificate, std::string& privatekey, const std::string& ip, std::uint16_t port, const std::string& devPort = "/dev/mhitty1") : 
 			UdpSerial(ip, port, devPort),
 			m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
 			m_ssl(SSL_new(m_ctx.get()), SSL_free) {
@@ -236,7 +235,7 @@ struct TLS : public UdpSerial {
 			attachUdpSocket(udp_channel());
 	}
 
-	~TLS() {
+	~TLSServer() {
 		SSL_shutdown(m_ssl.get());
 	}
 
@@ -268,7 +267,7 @@ struct TLS : public UdpSerial {
 		return(0);
 	}
 
-	TLS& attachUdpSocket(std::int32_t fd) {
+	TLSServer& attachUdpSocket(std::int32_t fd) {
 		// This willcause TLS handshake when we do SSL_write if handshake is not already done.
 		SSL_set_accept_state(m_ssl.get());
 		SSL_set_fd(m_ssl.get(), fd);
@@ -317,7 +316,7 @@ int main(int argc, char *argv[]) {
 		private_key = std::string(argv[5], strlen(argv[5]));
 	}
 
-	TLS dtls_server(certificate, private_key, ip, port, path);
+	TLSServer dtls_server(certificate, private_key, ip, port, path);
 
 	dtls_server.start();
 }
