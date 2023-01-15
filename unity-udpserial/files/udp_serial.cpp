@@ -290,6 +290,154 @@ struct TLSServer : public UdpSerial {
 
 };
 
+struct UDPClient {
+
+	UDPClient(std::string ip, std::uint16_t port) {
+		struct sockaddr_in addr;
+		/* Set up the address we're going to bind to. */
+		::bzero(&addr, sizeof(addr));
+  		addr.sin_family      = AF_INET;
+  		addr.sin_port        = htons(port);
+  		addr.sin_addr.s_addr = inet_addr(ip.c_str());
+  		::bzero( &addr.sin_zero, sizeof(addr.sin_zero ) );
+
+		m_udpFd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+		if(m_udpFd < 0) {
+			std::cout << "Creation of UDP socket Failed" << std::endl;
+			exit(-1);
+		}
+
+		/* set the reuse address flag so we don't get errors when restarting */
+		auto flag = 1;
+		if(::setsockopt(m_udpFd, SOL_SOCKET, SO_REUSEADDR, (std::int8_t *)&flag, sizeof(flag)) < 0 ) {
+			std::cout << "Error: Could not set reuse address option on DHCP socket!" << std::endl;
+			exit(-1);
+		}
+
+		/* bind the socket */
+		if(::bind(m_udpFd, (struct sockaddr *)&addr, sizeof(addr) ) < 0) 
+		{
+			std::cout << "Bind to ip:"<< ip << " port:" << port << " Failed" << std::endl;
+			exit(-1);
+		}
+	}
+
+	~UDPClient() {
+		this->close();
+	}
+
+	void close() {
+		::close(m_udpFd);
+	}
+
+	int udp_channel() const {
+		return(m_udpFd);
+	}
+
+	
+	private:
+		std::string m_ip;
+		std::uint16_t m_port;
+		std::int32_t m_udpFd;
+		struct sockaddr_in m_toAddr;
+};
+
+struct TLSClient : public UDPClient {
+
+	TLSClient(const std::string& ip, std::uint16_t port) : 
+		UDPClient(ip, port),
+		m_ctx(SSL_CTX_new(TLS_client_method()), SSL_CTX_free), 
+		m_ssl(SSL_new(m_ctx.get()), SSL_free) {
+
+		SSL_load_error_strings();
+		OpenSSL_add_ssl_algorithms();
+
+		//attaching plain UDP Fd to SSL Fd
+		attachUdpSocket(udp_channel());
+	}
+
+	~TLSClient() {
+		SSL_shutdown(m_ssl.get());
+	}
+
+	std::int32_t read(std::string& out) {
+
+		std::array<std::uint8_t, 2048> req;
+		req.fill(0);
+
+		auto ret = SSL_read(m_ssl.get(), (void *)req.data(), req.size());
+		if(ret <= 0) {
+			// SSL_read failed
+			ERR_print_errors_fp(stderr);
+			return(-1);
+		}
+
+		out = std::string((const char *)req.data(), ret);
+		return(0);
+	}
+
+	std::int32_t write(const std::string& in) {
+
+		auto ret = SSL_write(m_ssl.get(), (const void *)in.c_str(), in.length());
+		if(ret <= 0) {
+			//SSL_write is failed
+			ERR_print_errors_fp(stderr);
+			return(-1);
+		}
+
+		return(0);
+	}
+
+	TLSClient& attachUdpSocket(std::int32_t fd) {
+		// This willcause TLS handshake when we do SSL_write if handshake is not already done.
+		SSL_set_connect_state(m_ssl.get());
+		SSL_set_fd(m_ssl.get(), fd);
+		return(*this);
+	}
+
+	int txToUdp(std::string& req) {
+		this->write(req);
+	}
+
+	int rxFromUdp(std::string& rsp) {
+		this->read(rsp);
+	}
+
+	int start() {
+		int conn_id   = -1;
+		int num_bytes = -1;
+   		fd_set fdList;
+
+ 		while (1) {
+
+			/* A timeout for 5 secs*/ 
+			struct timeval to;
+ 			to.tv_sec = 5;
+ 			to.tv_usec = 0;
+
+		    FD_ZERO(&fdList);
+ 			FD_SET(udp_channel(), &fdList);
+			auto maxFd = udp_channel() + 1;
+
+			conn_id = ::select(maxFd, (fd_set *)&fdList, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *)&to);
+
+			if(conn_id > 0) {
+
+				if(FD_ISSET(udp_channel(), &fdList ) ) {
+					std::string request("");
+					num_bytes = rxFromUdp(request);
+				} else {
+					std::cout << " Invalid Fd don't know what to do" << std::endl;	
+				}
+    		}/* end of ( conn_id > 0 )*/
+  		} /* End of while loop */
+	}
+	private:
+		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
+		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
+
+};
+
 int main(int argc, char *argv[]) {
 	if(argc < 6) {
 		std::cout << "arg1=ip address arg2=port number arg3=serial path arg4=certificate arg5=private_key_file_name" << std::endl;
