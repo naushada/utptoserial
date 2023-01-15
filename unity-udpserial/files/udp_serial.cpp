@@ -70,8 +70,9 @@ class UdpSerial {
 			/* taking the back up of current terminal settings */
 			tcsetattr(m_serialFd, TCSANOW, &m_oldConfig);
 
-			struct termios newtio = {0};
-	    		// set new port settings for canonical input processing
+			struct termios newtio;
+			memset((void *)&newtio, 0, sizeof(struct termios));
+	    	// set new port settings for canonical input processing
 			auto baudrate = B115200;
 			auto dataBits = CS8;
 			auto stopBits = 0;
@@ -263,11 +264,11 @@ struct TLSServer : public UdpSerial {
 	}
 
 	int txToUdp(std::string& req) {
-		write(req);
+		return(this->write(req));
 	}
 
 	int rxFromUdp(std::string& rsp) {
-		read(rsp);
+		return(this->read(rsp));
 	}
 
 	private:
@@ -380,14 +381,14 @@ struct TLSClient : public UDPClient {
 	}
 
 	int txToUdp(std::string& req) {
-		this->write(req);
+		return(this->write(req));
 	}
 
 	int rxFromUdp(std::string& rsp) {
-		this->read(rsp);
+		return(this->read(rsp));
 	}
 
-	int start() {
+	int start_observer() {
 		int conn_id   = -1;
 		int num_bytes = -1;
    		fd_set fdList;
@@ -414,12 +415,21 @@ struct TLSClient : public UDPClient {
 					std::cout << " Invalid Fd don't know what to do" << std::endl;	
 				}
     		}/* end of ( conn_id > 0 )*/
+			return(0);
   		} /* End of while loop */
 	}
+
+	template <typename... Args>
+	std::int32_t send_command(Args... args) {
+		//process_command(args...);
+		return(0);
+	}
+
 	private:
 		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
 		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
 };
+
 
 int main(int argc, char *argv[]) {
 	if(argc < 6) {
