@@ -1,6 +1,19 @@
 #ifndef __UDP_SERIAL_CPP__
 #define __UDP_SERIAL_CPP__
 
+/**
+ * @file udp_serial.cpp
+ * @author Mohammed Naushad Ahmed (naushad.dln@gmail.com)
+ * @brief 
+ * @version 0.1
+ * @date 2023-01-15
+ * 
+ * @copyright Copyright (c) 2023
+ * 
+ */
+
+ // openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
+ 
 #include <iostream>
 #include <array>
 #include <memory>

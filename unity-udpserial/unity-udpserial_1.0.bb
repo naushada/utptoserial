@@ -6,7 +6,7 @@ SUMMARY = "Unity extra/common files"
 SECTION = "system"
 LICENSE = "CLOSED"
 
-
+DEPENDS += "openssl"
 inherit cmake
 
 SRC_URI += "file://udp_serial.cpp \
