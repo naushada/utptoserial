@@ -78,8 +78,8 @@ class UdpSerial {
 			auto parityOn = 0;
 			auto parity = 0;
 
-    		newtio.c_cflag =  CRTSCTS | dataBits | stopBits | parityOn | parity   | CLOCAL | CREAD;
-    		newtio.c_iflag = 0;
+			newtio.c_cflag =  CRTSCTS | dataBits | stopBits | parityOn | parity   | CLOCAL | CREAD;
+			newtio.c_iflag = 0;
 			newtio.c_oflag = 0;
 			newtio.c_lflag = 0;
 			newtio.c_cc[VMIN] = 1;
@@ -95,7 +95,6 @@ class UdpSerial {
 			tcsetattr(m_serialFd, TCSANOW, &m_oldConfig);
 			::close(m_serialFd);
 			::close(m_udpFd);
-
 		}
 
 		int txToUdp(std::string& req) {
@@ -115,9 +114,7 @@ class UdpSerial {
 				std::cout << " write to serial is failed" << std::endl;
 				return(-1);
 			}
-
 			return(0);
-
 		}
 
 		int rxFromUdp(std::string& rsp) {
@@ -157,13 +154,11 @@ class UdpSerial {
 		}
 
 		int start() {
-
 			int conn_id   = -1;
 			int num_bytes = -1;
    			fd_set fdList;
 
  			while (1) {
-
 				/* A timeout for 5 secs*/ 
 				struct timeval to;
  				to.tv_sec = 5;
@@ -174,13 +169,9 @@ class UdpSerial {
  				FD_SET(m_serialFd, &fdList);
 
 				std::int32_t maxFd = (m_udpFd > m_serialFd) ? m_udpFd : m_serialFd;
-				
 				conn_id = ::select((maxFd + 1), (fd_set *)&fdList, (fd_set *)NULL, (fd_set *)NULL, (struct timeval *)&to);
-
 				if(conn_id > 0) {
-
 					if(FD_ISSET(m_udpFd, &fdList ) ) {
-
 						std::string request("");
 						num_bytes = rxFromUdp(request);
 						num_bytes = txToSerial(request);
@@ -190,12 +181,10 @@ class UdpSerial {
 						std::string response("");
 						num_bytes = rxFromSerial(response);
 						num_bytes = txToUdp(response);
-
 					} else {
 						std::cout << " Invalid Fd don't know what to do" << std::endl;	
-        
 					}
-    				}/* end of ( conn_id > 0 )*/
+    			}/* end of ( conn_id > 0 )*/
   			} /* End of while loop */
 		}
 
@@ -207,32 +196,31 @@ class UdpSerial {
 		std::int32_t m_serialFd;
 		struct sockaddr_in m_toAddr;
 		struct termios m_oldConfig;
-
 };
 
 struct TLSServer : public UdpSerial {
 
 	TLSServer(std::string& certificate, std::string& privatekey, const std::string& ip, std::uint16_t port, const std::string& devPort = "/dev/mhitty1") : 
-			UdpSerial(ip, port, devPort),
-			m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
-			m_ssl(SSL_new(m_ctx.get()), SSL_free) {
+		UdpSerial(ip, port, devPort),
+		m_ctx(SSL_CTX_new(TLS_server_method()), SSL_CTX_free), 
+		m_ssl(SSL_new(m_ctx.get()), SSL_free) {
 
-			m_certificate = certificate;
-			m_privatekey = privatekey;
+		m_certificate = certificate;
+		m_privatekey = privatekey;
 
-			/* Set the key and cert */
-    		if(SSL_CTX_use_certificate_file(m_ctx.get(), certificate.c_str(), SSL_FILETYPE_PEM) <= 0) {
-        		ERR_print_errors_fp(stderr);
-        		exit(EXIT_FAILURE);
-    		}
+		/* Set the key and cert */
+    	if(SSL_CTX_use_certificate_file(m_ctx.get(), certificate.c_str(), SSL_FILETYPE_PEM) <= 0) {
+        	ERR_print_errors_fp(stderr);
+        	exit(EXIT_FAILURE);
+    	}
 
-    		if(SSL_CTX_use_PrivateKey_file(m_ctx.get(), privatekey.c_str(), SSL_FILETYPE_PEM) <= 0 ) {
-        		ERR_print_errors_fp(stderr);
-        		exit(EXIT_FAILURE);
-    		}
+    	if(SSL_CTX_use_PrivateKey_file(m_ctx.get(), privatekey.c_str(), SSL_FILETYPE_PEM) <= 0 ) {
+        	ERR_print_errors_fp(stderr);
+        	exit(EXIT_FAILURE);
+    	}
 
-			//attaching plain UDP Fd to SSL Fd
-			attachUdpSocket(udp_channel());
+		//attaching plain UDP Fd to SSL Fd
+		attachUdpSocket(udp_channel());
 	}
 
 	~TLSServer() {
@@ -291,7 +279,6 @@ struct TLSServer : public UdpSerial {
 };
 
 struct UDPClient {
-
 	UDPClient(std::string ip, std::uint16_t port) {
 		struct sockaddr_in addr;
 		/* Set up the address we're going to bind to. */
@@ -343,7 +330,6 @@ struct UDPClient {
 };
 
 struct TLSClient : public UDPClient {
-
 	TLSClient(const std::string& ip, std::uint16_t port) : 
 		UDPClient(ip, port),
 		m_ctx(SSL_CTX_new(TLS_client_method()), SSL_CTX_free), 
@@ -361,7 +347,6 @@ struct TLSClient : public UDPClient {
 	}
 
 	std::int32_t read(std::string& out) {
-
 		std::array<std::uint8_t, 2048> req;
 		req.fill(0);
 
@@ -377,7 +362,6 @@ struct TLSClient : public UDPClient {
 	}
 
 	std::int32_t write(const std::string& in) {
-
 		auto ret = SSL_write(m_ssl.get(), (const void *)in.c_str(), in.length());
 		if(ret <= 0) {
 			//SSL_write is failed
@@ -435,7 +419,6 @@ struct TLSClient : public UDPClient {
 	private:
 		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
 		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
-
 };
 
 int main(int argc, char *argv[]) {
