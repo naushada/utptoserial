@@ -534,12 +534,17 @@ int main(int argc, char *argv[]) {
 		dev = "/dev/mhitty1";
 	}
 
-	if(!public_key.length() && !private_key.length()) {
-		UdpSerial udp_server(ip, port, dev);
-		udp_server.start();
+	std::srting server("server");
+	if(role.length() && !role.compare(server)) {
+		if(!public_key.length() || !private_key.length()) {
+			UdpSerial udp_server(ip, port, dev);
+			udp_server.start();
+		} else {
+			std::unique_ptr<TLSServer> dtls_server = std::make_unique<TLSServer>(public_key, private_key, ip, port, dev);
+			start_dtls_server(std::move(dtls_server));
+		}
 	} else {
-		std::unique_ptr<TLSServer> dtls_server = std::make_unique<TLSServer>(public_key, private_key, ip, port, dev);
-		start_dtls_server(std::move(dtls_server));
+		//dtls client
 	}
 }
 
