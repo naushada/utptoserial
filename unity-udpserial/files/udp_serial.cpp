@@ -497,7 +497,9 @@ int main(int argc, char *argv[]) {
 	std::string baudrate("");
 
 	std::int32_t ch;
-	while((ch = getopt_long(argc, argv, "i:p:r:u:i:d:b:h:", long_options.data(), NULL)) != -1) {
+	// the colon(:) suffix is requred for an option tohave an argument value. In this case h does not requires 
+	// any value so nocolon after h.
+	while((ch = getopt_long(argc, argv, "i:p:r:u:i:d:b:h", long_options.data(), NULL)) != -1) {
     	switch (ch) {
         	case 'i':
 				ip = optarg;
@@ -521,6 +523,8 @@ int main(int argc, char *argv[]) {
                 baudrate = optarg;
                 break;
             default:
+				std::cout << "Usages: udp_serial --ip=<ip address> --port=<port number> --role=<client/server> "
+						  << "--dev=<serial device file name> --public_key=<public key file name> --private_key=<private key file name>";
 				break;
      	}
 	}
@@ -534,7 +538,7 @@ int main(int argc, char *argv[]) {
 		dev = "/dev/mhitty1";
 	}
 
-	std::srting server("server");
+	std::string server("server");
 	if(role.length() && !role.compare(server)) {
 		if(!public_key.length() || !private_key.length()) {
 			UdpSerial udp_server(ip, port, dev);
