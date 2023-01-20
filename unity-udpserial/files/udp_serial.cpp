@@ -17,6 +17,7 @@
 #include <iostream>
 #include <array>
 #include <memory>
+#include <vector>
 
 
 extern "C" {
@@ -32,7 +33,8 @@ extern "C" {
 	#include <sys/types.h>
 	#include <openssl/ssl.h>
 	#include <openssl/err.h>
-
+	#include <stdlib.h>
+	#include <getopt.h>
 }
 
 
@@ -111,7 +113,7 @@ class UdpSerial {
 			::close(m_udpFd);
 		}
 
-		int txToUdp(std::string& req) {
+		virtual int txToUdp(const std::string& req) {
 			std::int32_t ret = -1;
 			ret = ::sendto(m_udpFd, (void *)req.c_str(), req.length(), 0, (struct sockaddr *)&m_toAddr, sizeof(struct sockaddr));
 			if(ret < 0) {
@@ -131,7 +133,7 @@ class UdpSerial {
 			return(0);
 		}
 
-		int rxFromUdp(std::string& rsp) {
+		virtual int rxFromUdp(std::string& rsp) {
 			std::int32_t ret = -1;
 			std::array<char, 1024> in;
 			in.fill(0);
@@ -237,7 +239,7 @@ struct TLSServer : public UdpSerial {
 		attachUdpSocket(udp_channel());
 	}
 
-	~TLSServer() {
+	virtual ~TLSServer() {
 		SSL_shutdown(m_ssl.get());
 	}
 
@@ -269,19 +271,21 @@ struct TLSServer : public UdpSerial {
 		return(0);
 	}
 
+	virtual int rxFromUdp(std::string& rsp) override {
+		auto result = read(rsp);
+		return(result);
+	}
+
+	virtual int txToUdp(const std::string& req) override {
+		auto result = write(req);
+		return(result);
+	}
+
 	TLSServer& attachUdpSocket(std::int32_t fd) {
 		// This willcause TLS handshake when we do SSL_write if handshake is not already done.
 		SSL_set_accept_state(m_ssl.get());
 		SSL_set_fd(m_ssl.get(), fd);
 		return(*this);
-	}
-
-	int txToUdp(std::string& req) {
-		return(this->write(req));
-	}
-
-	int rxFromUdp(std::string& rsp) {
-		return(this->read(rsp));
 	}
 
 	private:
@@ -291,6 +295,18 @@ struct TLSServer : public UdpSerial {
 		std::string m_privatekey;
 
 };
+
+/**
+ * @brief This function takes a pointer to TLSServer and is copied to base class pointer, e.g.
+ *         std::unique_ptr<TLSServer> tlsServer = std::make_unique<TLSServer>();
+ *		   start_dtls_server(std::move(tlsServer))
+ * 
+ * @param subject The data is available on subject and willbe delivered to TLSServer
+ * @return std::int32_t 
+ */
+std::int32_t start_dtls_server(std::unique_ptr<UdpSerial> subject) {
+	subject->start();
+}
 
 struct UDPClient {
 	UDPClient(std::string ip, std::uint16_t port) {
@@ -431,48 +447,100 @@ struct TLSClient : public UDPClient {
 			return(0);
   		} /* End of while loop */
 	}
-
-	template <typename... Args>
-	std::int32_t send_command(Args... args) {
-		//process_command(args...);
-		return(0);
+#if 0
+	auto parse_argument_first(auto &&first) {
+		std::cout << "value of first: " << first << std::endl;
+		return(-1);
 	}
 
+	auto parse_argument_many(auto &first, auto &remains...) {
+		auto result = parse_argument_first(first);
+
+		if(result < 0) {
+			return(0);
+		}
+
+		return(parse_argument_many(remains...));
+	}
+
+	template <typename... Args>
+	std::int32_t process_command(Args... args) {
+		parse_argument_many(args...);
+		return(0);
+	}
+#endif
 	private:
 		std::unique_ptr<SSL_CTX, decltype(&SSL_CTX_free)> m_ctx;
 		std::unique_ptr<SSL, decltype(&SSL_free)> m_ssl;
 };
 
+/* getopt arguments */
+  std::vector<struct option> long_options =
+  {
+    {"ip",                required_argument, 0, 'i'},
+    {"port",              required_argument, 0, 'p'},
+    {"role",              required_argument, 0, 'r'},
+    {"public-key-file",   required_argument, 0, 'u'},
+    {"private-key-file",  required_argument, 0, 'v'},
+	{"dev",               required_argument, 0, 'd'},
+	{"baudrate",          required_argument, 0, 'b'},
+	{"help",              no_argument,       0, 'h'}
+  };
 
 int main(int argc, char *argv[]) {
-	if(argc < 6) {
-		std::cout << "arg1=ip address arg2=port number arg3=serial path arg4=certificate arg5=private_key_file_name" << std::endl;
-		return(-1);
-	}
-
-	std::string ip(argv[1], strlen(argv[1]));
-	std::uint16_t port = std::stoi(std::string(argv[2], strlen(argv[2])));
-	std::string path("");
-
-	path = std::string("/dev/mhitty1");
-	if(NULL != argv[3]) {
-		path = std::string(argv[3], strlen(argv[3]));
-	}
-
-	std::string certificate("");
+	std::string ip("");
+	std::uint16_t port = 0;
+	std::string public_key("");
 	std::string private_key("");
+	std::string role("");
+	std::string dev("");
+	std::string baudrate("");
 
-	if(NULL != argv[4]) {
-		certificate = std::string(argv[4], strlen(argv[4]));
+	std::int32_t ch;
+	while((ch = getopt_long(argc, argv, "i:p:r:u:i:d:b:h:", long_options.data(), NULL)) != -1) {
+    	switch (ch) {
+        	case 'i':
+				ip = optarg;
+				break;
+			case 'p':
+				port = std::stoi(optarg);
+				break;
+			case 'r':
+				role = optarg;
+				break;
+			case 'u':
+				public_key = optarg;
+				break;
+			case 'v':
+                private_key = optarg;
+                break;
+			case 'd':
+                dev = optarg;
+                break;
+			case 'b':
+                baudrate = optarg;
+                break;
+            default:
+				break;
+     	}
 	}
 
-	if(NULL != argv[5]) {
-		private_key = std::string(argv[5], strlen(argv[5]));
+	if(!ip.length() || !port) {
+		std::cout << "Invalid argument --ip=<ip address> --port=<port number>" << std::endl;
+		return(0);
 	}
 
-	TLSServer dtls_server(certificate, private_key, ip, port, path);
+	if(!dev.length()) {
+		dev = "/dev/mhitty1";
+	}
 
-	dtls_server.start();
+	if(!public_key.length() && !private_key.length()) {
+		UdpSerial udp_server(ip, port, dev);
+		udp_server.start();
+	} else {
+		std::unique_ptr<TLSServer> dtls_server = std::make_unique<TLSServer>(public_key, private_key, ip, port, dev);
+		start_dtls_server(std::move(dtls_server));
+	}
 }
 
 
